@@ -1545,7 +1545,12 @@ async function run(opts, deps) {
   };
   let classifier;
   if (env.triage?.provider === "typesafe") {
-    classifier = typesafeClassifier(deps.makeTypeSafe ? deps.makeTypeSafe(env.triage) : new TypeSafe(env.triage), log);
+    const triageCfg = env.triage;
+    let client = null;
+    classifier = async (input) => {
+      client ??= deps.makeTypeSafe ? deps.makeTypeSafe(triageCfg) : new TypeSafe(triageCfg);
+      return typesafeClassifier(client, log)(input);
+    };
   } else if (env.triage) {
     const triageCfg = env.triage;
     classifier = async (input) => {
@@ -1771,7 +1776,7 @@ function defaultConfigPath() {
 }
 
 // src/version.ts
-var VERSION = "v0.1.0";
+var VERSION = "v0.1.1";
 
 // src/action.ts
 function input(name) {

@@ -148,7 +148,15 @@ export async function run(opts: RunOptions, deps: RunDeps): Promise<RunOutcome> 
 
   let classifier: Classifier | undefined;
   if (env.triage?.provider === "typesafe") {
-    classifier = typesafeClassifier(deps.makeTypeSafe ? deps.makeTypeSafe(env.triage) : new TypeSafe(env.triage), log);
+    // Built inside the call, so a missing key or an unreachable endpoint is a
+    // triage failure the rules fall back from — the review still happens, and
+    // the decision line says why the model was not consulted.
+    const triageCfg = env.triage;
+    let client: TypeSafe | null = null;
+    classifier = async (input) => {
+      client ??= deps.makeTypeSafe ? deps.makeTypeSafe(triageCfg) : new TypeSafe(triageCfg);
+      return typesafeClassifier(client, log)(input);
+    };
   } else if (env.triage) {
     const triageCfg = env.triage;
     classifier = async (input) => {

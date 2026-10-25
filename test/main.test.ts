@@ -271,6 +271,16 @@ describe("run", () => {
     expect(llm.calls[0]!.effort).toBe("high");
   });
 
+  test("a TypeSafe triage without its key falls back to the rules and says so; the review still happens", async () => {
+    const gh = new FakeGitHub();
+    const e = env();
+    e.triage = { provider: "typesafe", baseUrl: "https://api.typesafe.test", apiKey: "", model: "jev-latest", api: "chat", timeoutMs: 1000, extraHeaders: {} };
+    const out = await run(opts(), { gh: gh as unknown as GitHub, env: e, makeLLM: () => new FakeLLM("review-model", [CLEAN_REPLY]), log: silentLogger });
+    expect(out.decision.classifier).toBe("fallback");
+    expect(out.decision.reasons.join()).toContain("TRIAGE_API_KEY");
+    expect(gh.created.map((c) => c.input.event)).toEqual(["COMMENT", "APPROVE"]);
+  });
+
   test("dry run posts nothing and returns the bodies", async () => {
     const gh = new FakeGitHub();
     const out = await run(opts({ dryRun: true }), deps(gh, [new FakeLLM("review-model", [CLEAN_REPLY])]));

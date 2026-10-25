@@ -18,7 +18,7 @@ Three things go into the repository that wants reviews.
 **1. The workflow** — copy [`examples/review-bot.yml`](examples/review-bot.yml) to `.github/workflows/review-bot.yml` and pin the tag:
 
 ```yaml
-      - uses: maropark/review-bot@v0.1.0
+      - uses: maropark/review-bot@v0.1.1
 ```
 
 It runs on `pull_request` `ready_for_review` and `synchronize` (drafts, Dependabot and fork PRs are skipped), and can be run by hand from the Actions tab (`workflow_dispatch` with a PR number). The workflow's own token is enough to post a review; see [Approval](#approval-what-counts-on-github) for what it takes to approve.
@@ -113,7 +113,7 @@ The reply must be one JSON object. A reply that does not validate (a clean verdi
 
 GitHub lets a *private* repository's action be used only by repositories of the **same owner**. So for an owner that is not the consuming organization (this bot under `maropark/`, used by `xpepTechnology/*`), there are two ways:
 
-- **Public repository** (recommended): `uses: maropark/review-bot@v0.1.0` works everywhere, no token. The bot holds no secrets, so there is nothing to hide; pinning to a tag means the consuming repo decides when to move.
+- **Public repository** (recommended): `uses: maropark/review-bot@v0.1.1` works everywhere, no token. The bot holds no secrets, so there is nothing to hide; pinning to a tag means the consuming repo decides when to move.
 - **Private repository plus a read token**: a fine-grained personal access token with read access to that one repository, stored in each consuming repo as a secret, and a checkout step before the action:
 
   ```yaml
