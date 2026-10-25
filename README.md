@@ -18,7 +18,7 @@ Three things go into the repository that wants reviews.
 **1. The workflow** — copy [`examples/review-bot.yml`](examples/review-bot.yml) to `.github/workflows/review-bot.yml` and pin the tag:
 
 ```yaml
-      - uses: xpepTechnology/review-bot@v0.1.0
+      - uses: maropark/review-bot@v0.1.0
 ```
 
 It runs on `pull_request` `ready_for_review` and `synchronize` (drafts, Dependabot and fork PRs are skipped), and can be run by hand from the Actions tab (`workflow_dispatch` with a PR number). The workflow's own token is enough to post a review; see [Approval](#approval-what-counts-on-github) for what it takes to approve.
@@ -187,4 +187,4 @@ bun run check            # all of the above, and dist must match the source
 
 ## Licence
 
-Private. © Maro Park.
+© Maro Park. The repository is public so that other repositories can run it as a pinned action; no further licence is granted. Only its owner can push to it, so a consuming repository's pin to a tag is a pin to code only that owner can change.
