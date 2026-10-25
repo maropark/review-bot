@@ -1,0 +1,68 @@
+name: review-bot
+description: >-
+  Model-agnostic pull-request review. A cheap system-1 triage picks the tier,
+  a strong model reviews against the repository's own protocol, the findings
+  are posted as a review, and an approval follows only when the gate allows it.
+author: maropark
+
+# Provider settings are NOT inputs. They come from the job's `env:` —
+# REVIEW_BASE_URL, REVIEW_API_KEY, REVIEW_MODEL, REVIEW_API, and the TRIAGE_*
+# twins — so a provider switch is a repository variable, never a workflow edit.
+inputs:
+  github-token:
+    description: Token used to read the PR and post the review. Defaults to the workflow token.
+    default: ${{ github.token }}
+  pr:
+    description: Pull request number. Defaults to the event's pull request (or `inputs.pr` on workflow_dispatch).
+    default: ""
+  repository:
+    description: owner/name. Defaults to GITHUB_REPOSITORY.
+    default: ""
+  checkout:
+    description: Directory where the PR HEAD is checked out; protocol files and changed files are read from it. Defaults to the workspace. Empty string → read through the API.
+    default: ${{ github.workspace }}
+  config:
+    description: Path of the repository's review-bot config, relative to the checkout.
+    default: .github/review-bot.json
+  dry-run:
+    description: Print the decision and the review it would post; post nothing.
+    default: "false"
+  force:
+    description: Review again even if a review is already pinned to the head sha.
+    default: "false"
+  triage-only:
+    description: Stop after the triage decision.
+    default: "false"
+  wait-for-checks-minutes:
+    description: Before deciding to approve, wait up to this long for pending required checks (0 = do not wait; a pending check does not block an approval).
+    default: "0"
+  worry:
+    description: What you are worried about; handed to the reviewer verbatim.
+    default: ""
+  verbose:
+    description: Debug logging.
+    default: "false"
+
+outputs:
+  tier:
+    description: skip | light | standard | adversarial
+  may_approve:
+    description: Whether the triage allowed an approval at all.
+  approved:
+    description: Whether an approval was posted (or already existed) for this head.
+  skipped:
+    description: Whether the PR was skipped (draft, waived, bot patch bump).
+  review_url:
+    description: The posted (or reused) review.
+  approval_url:
+    description: The approval review, if any.
+  decision:
+    description: The full triage decision as JSON.
+
+runs:
+  using: node24
+  main: dist/index.js
+
+branding:
+  icon: eye
+  color: gray-dark

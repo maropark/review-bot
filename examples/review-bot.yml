@@ -1,0 +1,59 @@
+# Drop this in <repo>/.github/workflows/review-bot.yml and pin the tag.
+name: Review bot
+
+on:
+  pull_request:
+    types: [ready_for_review, synchronize]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number
+        required: true
+      force:
+        description: Review again even if a review is pinned to the head
+        default: "false"
+      dry-run:
+        description: Print the review instead of posting it
+        default: "false"
+
+# A new push voids the review that was running; stop paying for it.
+concurrency:
+  group: review-bot-${{ github.event.pull_request.number || inputs.pr }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    # Drafts are not reviewed. Dependabot's and fork PRs have a read-only token,
+    # so the post would 403; skip them rather than fail them.
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || (github.event.pull_request.draft == false
+          && github.actor != 'dependabot[bot]'
+          && github.event.pull_request.head.repo.fork != true)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: read
+      statuses: read
+    steps:
+      # The PR HEAD, not the merge commit: the review pins the head sha, and the
+      # protocol files and changed files are read from this tree.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || format('refs/pull/{0}/head', inputs.pr) }}
+      - uses: OWNER/review-bot@v0.1.0
+        env:
+          REVIEW_BASE_URL: ${{ vars.REVIEW_BASE_URL }}
+          REVIEW_MODEL: ${{ vars.REVIEW_MODEL }}
+          REVIEW_API: ${{ vars.REVIEW_API }}
+          REVIEW_API_KEY: ${{ secrets.REVIEW_API_KEY }}
+          TRIAGE_BASE_URL: ${{ vars.TRIAGE_BASE_URL }}
+          TRIAGE_MODEL: ${{ vars.TRIAGE_MODEL }}
+          TRIAGE_API: ${{ vars.TRIAGE_API }}
+          TRIAGE_API_KEY: ${{ secrets.TRIAGE_API_KEY }}
+        with:
+          pr: ${{ inputs.pr }}
+          force: ${{ inputs.force }}
+          dry-run: ${{ inputs.dry-run }}

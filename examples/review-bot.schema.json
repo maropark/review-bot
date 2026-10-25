@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "review-bot repository config (.github/review-bot.json)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "owner": { "type": "string", "description": "The human code owner / maintainer login. A signal in the decision line, not a permission." },
+    "protocol": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "enum": ["adversary-v1", "generic"], "description": "adversary-v1 renders the record packmaster.work's review-record.ts parses; generic is a plain findings list." },
+        "files": { "type": "array", "items": { "type": "string" }, "description": "Repo files handed to the reviewer as its protocol and domain rules, read at the PR head." }
+      }
+    },
+    "risk": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["label", "paths"],
+        "properties": {
+          "label": { "type": "string" },
+          "paths": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+          "tier": { "enum": ["light", "standard", "adversarial"], "default": "adversarial" },
+          "approve": { "type": "boolean", "default": false, "description": "May the bot still approve when this rule matched?" }
+        }
+      }
+    },
+    "skip": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "labels": { "type": "array", "items": { "type": "string" }, "default": ["review:waived"] },
+        "authors": { "type": "array", "items": { "type": "string" }, "default": ["dependabot[bot]"], "description": "Skipped unless the title reads as a major version bump." }
+      }
+    },
+    "tiers": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "light": { "$ref": "#/$defs/tier" },
+        "standard": { "$ref": "#/$defs/tier" },
+        "adversarial": { "$ref": "#/$defs/tier" }
+      }
+    },
+    "size": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "light": { "type": "integer", "default": 60, "description": "Changed lines at or below which an unforced PR is light (when no triage model answers)." },
+        "standard": { "type": "integer", "default": 400 }
+      }
+    },
+    "docsOnly": { "type": "array", "items": { "type": "string" } },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "tiers": { "type": "array", "items": { "enum": ["skip", "light", "standard", "adversarial"] } },
+        "requireGreenChecks": { "type": "boolean", "default": false, "description": "rpa's rule: a pending check does not block an approval. Set true to require green." },
+        "requestChangesOnBlocker": { "type": "boolean", "default": false }
+      }
+    },
+    "requiredChecks": { "type": ["array", "null"], "items": { "type": "string" }, "description": "Override; null reads the base branch's ruleset." },
+    "post": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "recordComment": { "type": "boolean", "default": false, "description": "Also post the adversary-v1 record as an issue comment, for a comment-reading status." } }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxDiffBytes": { "type": "integer", "default": 300000 },
+        "maxInlineBytes": { "type": "integer", "default": 200000 },
+        "maxFileBytes": { "type": "integer", "default": 60000 },
+        "maxProtocolBytes": { "type": "integer", "default": 60000 },
+        "maxBodyChars": { "type": "integer", "default": 6000 }
+      }
+    }
+  },
+  "$defs": {
+    "tier": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "model": { "type": "string", "description": "Overrides REVIEW_MODEL for this tier." },
+        "effort": { "enum": ["none", "low", "medium", "high"] }
+      }
+    }
+  }
+}
