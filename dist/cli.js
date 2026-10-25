@@ -9,6 +9,7 @@ function strongerTier(a, b) {
 }
 var SEVERITIES = ["blocker", "major", "minor"];
 var FINDING_STATUSES = ["open", "fixed", "rebutted", "deferred"];
+var silentLogger = { info() {}, warn() {}, error() {}, debug() {} };
 function consoleLogger(verbose = false) {
   return {
     info: (m) => console.log(m),
@@ -59,9 +60,23 @@ function headers(v, name) {
   }
   return out;
 }
+function providerKind(v, name) {
+  const k = (v ?? "").trim().toLowerCase();
+  if (!k)
+    return null;
+  if (k === "openai" || k === "openai-compatible" || k === "chat")
+    return "openai";
+  if (k === "typesafe")
+    return "typesafe";
+  throw new Error(`${name} must be "openai" (any OpenAI-compatible endpoint) or "typesafe", got "${v}"`);
+}
 function envConfig(env = process.env) {
+  const reviewProvider = providerKind(env.REVIEW_PROVIDER, "REVIEW_PROVIDER") ?? "openai";
+  if (reviewProvider !== "openai")
+    throw new Error("REVIEW_PROVIDER must be openai: the review needs a model that writes text; TypeSafe's Jev is the triage model");
   const reviewBase = trimSlash(env.REVIEW_BASE_URL?.trim() || "https://api.openai.com/v1");
   const review = {
+    provider: "openai",
     baseUrl: reviewBase,
     apiKey: env.REVIEW_API_KEY ?? "",
     model: env.REVIEW_MODEL?.trim() ?? "",
@@ -70,14 +85,29 @@ function envConfig(env = process.env) {
     extraHeaders: headers(env.REVIEW_EXTRA_HEADERS, "REVIEW_EXTRA_HEADERS")
   };
   const triageModel = env.TRIAGE_MODEL?.trim() ?? "";
-  const triage = triageModel ? {
-    baseUrl: trimSlash(env.TRIAGE_BASE_URL?.trim() || reviewBase),
-    apiKey: env.TRIAGE_API_KEY || review.apiKey,
-    model: triageModel,
-    api: apiKind(env.TRIAGE_API ?? env.REVIEW_API),
-    timeoutMs: num(env.TRIAGE_TIMEOUT_SECONDS, 120) * 1000,
-    extraHeaders: headers(env.TRIAGE_EXTRA_HEADERS ?? env.REVIEW_EXTRA_HEADERS, "TRIAGE_EXTRA_HEADERS")
-  } : null;
+  const triageBase = env.TRIAGE_BASE_URL?.trim() ?? "";
+  const triageProvider = providerKind(env.TRIAGE_PROVIDER, "TRIAGE_PROVIDER") ?? (/typesafe\.ai/i.test(triageBase) || /^jev\b/i.test(triageModel) ? "typesafe" : "openai");
+  let triage;
+  if (triageProvider === "typesafe") {
+    triage = {
+      provider: "typesafe",
+      baseUrl: trimSlash(triageBase || "https://api.typesafe.ai"),
+      apiKey: env.TRIAGE_API_KEY ?? "",
+      model: triageModel || "jev-latest",
+      api: "chat",
+      timeoutMs: num(env.TRIAGE_TIMEOUT_SECONDS, 60) * 1000,
+      extraHeaders: headers(env.TRIAGE_EXTRA_HEADERS, "TRIAGE_EXTRA_HEADERS")
+    };
+  } else
+    triage = triageModel ? {
+      provider: "openai",
+      baseUrl: trimSlash(triageBase || reviewBase),
+      apiKey: env.TRIAGE_API_KEY || review.apiKey,
+      model: triageModel,
+      api: apiKind(env.TRIAGE_API ?? env.REVIEW_API),
+      timeoutMs: num(env.TRIAGE_TIMEOUT_SECONDS, 120) * 1000,
+      extraHeaders: headers(env.TRIAGE_EXTRA_HEADERS ?? env.REVIEW_EXTRA_HEADERS, "TRIAGE_EXTRA_HEADERS")
+    } : null;
   return {
     githubToken: env.GITHUB_TOKEN ?? env.GH_TOKEN ?? "",
     githubApi: trimSlash(env.GITHUB_API_URL?.trim() || "https://api.github.com"),
@@ -1163,6 +1193,7 @@ async function triage(signals, config, defaultModel, classify) {
   let tier = "standard";
   let mayApprove = true;
   let classifier = "rules";
+  let worry;
   const forced = forcedRules(signals.files, config);
   const lower = (s) => s.toLowerCase();
   const waived = signals.labels.find((l) => config.skip.labels.map(lower).includes(lower(l)));
@@ -1201,6 +1232,8 @@ async function triage(signals, config, defaultModel, classify) {
         tier = r.tier;
         classifier = "model";
         reasons.push(`triage model: ${r.reason}`);
+        if (r.worry)
+          worry = r.worry;
       } else {
         tier = sizeTier(lines, config);
         classifier = "fallback";
@@ -1251,6 +1284,7 @@ async function triage(signals, config, defaultModel, classify) {
     forced,
     reasons,
     classifier,
+    ...worry ? { worry } : {},
     signals: {
       files: signals.files.length,
       additions: signals.additions,
@@ -1316,6 +1350,128 @@ function parseClassifierReply(parsed) {
   if (tier !== "light" && tier !== "standard" && tier !== "adversarial")
     return null;
   return { tier, reason: typeof p.reason === "string" && p.reason.trim() ? p.reason.trim().slice(0, 300) : "no reason given" };
+}
+
+// src/typesafe.ts
+class TypeSafe {
+  cfg;
+  fetchImpl;
+  sleep;
+  constructor(cfg, fetchImpl = fetch, sleep = (ms) => new Promise((r) => setTimeout(r, ms))) {
+    this.cfg = cfg;
+    this.fetchImpl = fetchImpl;
+    this.sleep = sleep;
+    if (!cfg.apiKey)
+      throw new LLMError(0, "TRIAGE_API_KEY is required for the TypeSafe triage");
+  }
+  get model() {
+    return this.cfg.model || "jev-latest";
+  }
+  async systemOne(req) {
+    const body = { model: req.model ?? this.model, state: req.state, questions: req.questions };
+    for (let attempt = 1;; attempt++) {
+      const ctrl = new AbortController;
+      const timer = setTimeout(() => ctrl.abort(), this.cfg.timeoutMs);
+      let res;
+      try {
+        res = await this.fetchImpl(`${this.cfg.baseUrl}/v1/systemone`, {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: `Bearer ${this.cfg.apiKey}`, ...this.cfg.extraHeaders },
+          body: JSON.stringify(body),
+          signal: ctrl.signal
+        });
+      } catch (e) {
+        clearTimeout(timer);
+        if (attempt < 3) {
+          await this.sleep(1000 * attempt);
+          continue;
+        }
+        throw new LLMError(0, `${this.cfg.baseUrl}/v1/systemone: ${e instanceof Error ? e.message : String(e)}`);
+      }
+      clearTimeout(timer);
+      const text = await res.text();
+      if (res.ok) {
+        try {
+          return JSON.parse(text);
+        } catch {
+          throw new LLMError(res.status, `/v1/systemone returned non-JSON: ${text.slice(0, 200)}`);
+        }
+      }
+      if ((res.status === 429 || res.status >= 500) && attempt < 4) {
+        const retryAfter = Number(res.headers.get("retry-after"));
+        await this.sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 2000 * attempt);
+        continue;
+      }
+      throw new LLMError(res.status, `/v1/systemone → ${res.status}: ${text.slice(0, 400)}`);
+    }
+  }
+}
+function triageState(input) {
+  const { signals, config } = input;
+  return {
+    title: signals.title,
+    author: signals.author,
+    author_type: signals.authorType,
+    labels: signals.labels,
+    size: { files: signals.files.length, additions: signals.additions, deletions: signals.deletions },
+    ci: signals.checks.overall,
+    files: signals.files.slice(0, 150).map((f) => ({ path: f.filename, additions: f.additions, deletions: f.deletions, status: f.status })),
+    files_omitted: Math.max(0, signals.files.length - 150),
+    description: (signals.body || "").slice(0, 2000),
+    risk_areas: config.risk.map((r) => r.label)
+  };
+}
+var TIER_QUESTION = {
+  type: "choice",
+  instructions: "How much independent code review does this pull request need before it merges? Judge from `title`, `description` (the author's own claim, not evidence), the `files` changed with their sizes and statuses, `labels` and `author`. The repository names its high-risk areas in `risk_areas`; no path rule matched this PR, so judge whether the change still touches those concerns by what it does.",
+  criteria: {
+    light: "Cosmetic, documentation, copy, or configuration nobody else depends on; a change a reader verifies at a glance; no new data path and no behaviour another system or user relies on.",
+    standard: "An ordinary code change with a bounded blast radius: new or changed behaviour inside one feature, touching no money, permissions, stored data shape, external contract or CI.",
+    adversarial: "Money, prices, payments or postage; data integrity, a migration or a stored data shape; authentication, authorization or permissions; a contract another system depends on; concurrency or a read-then-write; CI, build or deploy configuration; the tests or fixtures themselves; or a diff too large or tangled to reason about quickly."
+  }
+};
+var FLAG_QUESTIONS = {
+  money: { type: "noul", instructions: "Does this change affect how money, prices, discounts, payments, refunds, commissions, postage or anything purchasable is computed, charged or recorded?" },
+  auth: { type: "noul", instructions: "Does this change affect who may do what: authentication, sessions, roles, permissions, access checks, or a route reachable without them?" },
+  data: { type: "noul", instructions: "Does this change alter how data is stored or migrated, the shape of stored data, or a read-then-write that could lose an update under concurrency?" },
+  contract: { type: "noul", instructions: "Does this change alter a payload, endpoint, webhook, file format or schedule that another system depends on?" },
+  tests_weakened: { type: "noul", instructions: "Does this change remove, skip, loosen or disable a test, fixture, assertion, lint rule or check?" }
+};
+function tierFromAnswers(answers, thresholds = { lowConfidence: 0.5, flag: 0.6, strongFlag: 0.75 }) {
+  const tierAnswer = answers.tier;
+  if (!tierAnswer || tierAnswer.type !== "choice")
+    return null;
+  const choice = tierAnswer.choice;
+  if (choice !== "light" && choice !== "standard" && choice !== "adversarial")
+    return null;
+  let tier = choice;
+  const notes = [];
+  const flags = {};
+  for (const [name, a] of Object.entries(answers)) {
+    if (a.type === "noul" && name in FLAG_QUESTIONS)
+      flags[name] = a.noul;
+  }
+  const raised = Object.entries(flags).filter(([, p]) => p >= thresholds.flag).sort((a, b) => b[1] - a[1]);
+  if (tier === "light" && tierAnswer.confidence < thresholds.lowConfidence) {
+    tier = "standard";
+    notes.push(`confidence ${tierAnswer.confidence.toFixed(2)} is low, so not lighter than standard`);
+  }
+  if (tier === "light" && raised.some(([, p]) => p >= thresholds.strongFlag)) {
+    tier = "standard";
+    notes.push("a strong flag lifts light to standard");
+  }
+  const probs = Object.entries(tierAnswer.probabilities).sort((a, b) => b[1] - a[1]).map(([k, p]) => `${k} ${p.toFixed(2)}`).join(", ");
+  const flagText = raised.length ? `; flags: ${raised.map(([k, p]) => `${k} ${p.toFixed(2)}`).join(", ")}` : "";
+  const reason = `Jev chose ${choice} (${probs}; confidence ${tierAnswer.confidence.toFixed(2)})${flagText}${notes.length ? ` — ${notes.join("; ")}` : ""}`;
+  const worry = raised.length ? `The triage model flagged this change as likely touching: ${raised.map(([k, p]) => `${k} (${p.toFixed(2)})`).join(", ")}.` : undefined;
+  return { tier, reason, flags, ...worry ? { worry } : {} };
+}
+function typesafeClassifier(client, log = silentLogger) {
+  return async (input) => {
+    const res = await client.systemOne({ state: triageState(input), questions: { tier: TIER_QUESTION, ...FLAG_QUESTIONS } });
+    log.debug(`TypeSafe ${res.model}: ${JSON.stringify(res.answers)}${res.usage ? ` (${res.usage.input_tokens ?? "?"} input tokens)` : ""}`);
+    return tierFromAnswers(res.answers);
+  };
 }
 
 // src/main.ts
@@ -1388,7 +1544,9 @@ async function run(opts, deps) {
     checks
   };
   let classifier;
-  if (env.triage) {
+  if (env.triage?.provider === "typesafe") {
+    classifier = typesafeClassifier(deps.makeTypeSafe ? deps.makeTypeSafe(env.triage) : new TypeSafe(env.triage), log);
+  } else if (env.triage) {
     const triageCfg = env.triage;
     classifier = async (input) => {
       const llm = deps.makeLLM(triageCfg);
@@ -1479,7 +1637,8 @@ ${(c.body ?? "").slice(0, 2000)}`);
     const nextId = nextFindingId(allPrior);
     const priorIds = new Set(allPrior.map((f) => f.id));
     const llm = deps.makeLLM({ ...env.review, model: decision.model });
-    const promptBase = { signals, decision, config, diff: diff.text, diffBytes, diffTruncated: diff.truncated, protocolFiles, inlineFiles, prior, nextId, worry: opts.worry };
+    const worry = [opts.worry, decision.worry].filter(Boolean).join(" ") || undefined;
+    const promptBase = { signals, decision, config, diff: diff.text, diffBytes, diffTruncated: diff.truncated, protocolFiles, inlineFiles, prior, nextId, worry };
     let problems = [];
     let parsed = null;
     let lastText = "";

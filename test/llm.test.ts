@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { ProviderConfig } from "../src/config.ts";
 import { OpenAICompatible, extractJson, extractResponsesText, unsupportedParam } from "../src/llm.ts";
 
-const cfg = (over: Partial<ProviderConfig> = {}): ProviderConfig => ({ baseUrl: "https://llm.test/v1", apiKey: "k", model: "m", api: "chat", timeoutMs: 5000, extraHeaders: {}, ...over });
+const cfg = (over: Partial<ProviderConfig> = {}): ProviderConfig => ({ provider: "openai", baseUrl: "https://llm.test/v1", apiKey: "k", model: "m", api: "chat", timeoutMs: 5000, extraHeaders: {}, ...over });
 
 function fakeFetch(responses: { status: number; body: unknown; headers?: Record<string, string> }[]) {
   const calls: { url: string; body: Record<string, unknown>; headers: Record<string, string> }[] = [];

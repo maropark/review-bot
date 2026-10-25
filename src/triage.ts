@@ -18,7 +18,14 @@ export interface ClassifierInput {
   config: RepoConfig;
 }
 
-export type ClassifierResult = { tier: Exclude<Tier, "skip">; reason: string };
+export type ClassifierResult = {
+  tier: Exclude<Tier, "skip">;
+  reason: string;
+  /** Per-concern probabilities from a System One triage, when the provider gives them. */
+  flags?: Record<string, number>;
+  /** A sentence for the reviewer: what the triage thinks this change touches. */
+  worry?: string;
+};
 export type Classifier = (input: ClassifierInput) => Promise<ClassifierResult | null>;
 
 /** "Bump x from 1.2.3 to 2.0.0" — a major version change, which earns a review a bot's patch bump does not. */
@@ -55,6 +62,7 @@ export async function triage(signals: PRSignals, config: RepoConfig, defaultMode
   let tier: Tier = "standard";
   let mayApprove = true;
   let classifier: Decision["classifier"] = "rules";
+  let worry: string | undefined;
   const forced = forcedRules(signals.files, config);
 
   const lower = (s: string) => s.toLowerCase();
@@ -94,6 +102,7 @@ export async function triage(signals: PRSignals, config: RepoConfig, defaultMode
         tier = r.tier;
         classifier = "model";
         reasons.push(`triage model: ${r.reason}`);
+        if (r.worry) worry = r.worry;
       } else {
         tier = sizeTier(lines, config);
         classifier = "fallback";
@@ -144,6 +153,7 @@ export async function triage(signals: PRSignals, config: RepoConfig, defaultMode
     forced,
     reasons,
     classifier,
+    ...(worry ? { worry } : {}),
     signals: {
       files: signals.files.length,
       additions: signals.additions,

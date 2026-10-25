@@ -49,6 +49,7 @@ jobs:
           REVIEW_MODEL: ${{ vars.REVIEW_MODEL }}
           REVIEW_API: ${{ vars.REVIEW_API }}
           REVIEW_API_KEY: ${{ secrets.REVIEW_API_KEY }}
+          TRIAGE_PROVIDER: ${{ vars.TRIAGE_PROVIDER }}
           TRIAGE_BASE_URL: ${{ vars.TRIAGE_BASE_URL }}
           TRIAGE_MODEL: ${{ vars.TRIAGE_MODEL }}
           TRIAGE_API: ${{ vars.TRIAGE_API }}

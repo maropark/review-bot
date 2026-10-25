@@ -16,8 +16,11 @@ import type { Effort, Tier } from "./types.ts";
 import { REVIEW_TIERS } from "./types.ts";
 
 export type ApiKind = "chat" | "responses";
+/** `openai` is any OpenAI-compatible text endpoint; `typesafe` is TypeSafe's System One API (triage only — Jev does not write reviews). */
+export type ProviderKind = "openai" | "typesafe";
 
 export interface ProviderConfig {
+  provider: ProviderKind;
   baseUrl: string;
   apiKey: string;
   model: string;
@@ -71,9 +74,20 @@ function headers(v: string | undefined, name: string): Record<string, string> {
   return out;
 }
 
+function providerKind(v: string | undefined, name: string): ProviderKind | null {
+  const k = (v ?? "").trim().toLowerCase();
+  if (!k) return null;
+  if (k === "openai" || k === "openai-compatible" || k === "chat") return "openai";
+  if (k === "typesafe") return "typesafe";
+  throw new Error(`${name} must be "openai" (any OpenAI-compatible endpoint) or "typesafe", got "${v}"`);
+}
+
 export function envConfig(env: NodeJS.ProcessEnv = process.env): EnvConfig {
+  const reviewProvider = providerKind(env.REVIEW_PROVIDER, "REVIEW_PROVIDER") ?? "openai";
+  if (reviewProvider !== "openai") throw new Error("REVIEW_PROVIDER must be openai: the review needs a model that writes text; TypeSafe's Jev is the triage model");
   const reviewBase = trimSlash(env.REVIEW_BASE_URL?.trim() || "https://api.openai.com/v1");
   const review: ProviderConfig = {
+    provider: "openai",
     baseUrl: reviewBase,
     apiKey: env.REVIEW_API_KEY ?? "",
     model: env.REVIEW_MODEL?.trim() ?? "",
@@ -82,9 +96,26 @@ export function envConfig(env: NodeJS.ProcessEnv = process.env): EnvConfig {
     extraHeaders: headers(env.REVIEW_EXTRA_HEADERS, "REVIEW_EXTRA_HEADERS"),
   };
   const triageModel = env.TRIAGE_MODEL?.trim() ?? "";
-  const triage: ProviderConfig | null = triageModel
+  const triageBase = env.TRIAGE_BASE_URL?.trim() ?? "";
+  // TypeSafe is inferred from its URL or a `jev` model name, or named outright.
+  const triageProvider: ProviderKind =
+    providerKind(env.TRIAGE_PROVIDER, "TRIAGE_PROVIDER") ?? (/typesafe\.ai/i.test(triageBase) || /^jev\b/i.test(triageModel) ? "typesafe" : "openai");
+  let triage: ProviderConfig | null;
+  if (triageProvider === "typesafe") {
+    triage = {
+      provider: "typesafe",
+      baseUrl: trimSlash(triageBase || "https://api.typesafe.ai"),
+      apiKey: env.TRIAGE_API_KEY ?? "",
+      model: triageModel || "jev-latest",
+      api: "chat",
+      timeoutMs: num(env.TRIAGE_TIMEOUT_SECONDS, 60) * 1000,
+      extraHeaders: headers(env.TRIAGE_EXTRA_HEADERS, "TRIAGE_EXTRA_HEADERS"),
+    };
+  } else
+  triage = triageModel
     ? {
-        baseUrl: trimSlash(env.TRIAGE_BASE_URL?.trim() || reviewBase),
+        provider: "openai",
+        baseUrl: trimSlash(triageBase || reviewBase),
         apiKey: env.TRIAGE_API_KEY || review.apiKey,
         model: triageModel,
         api: apiKind(env.TRIAGE_API ?? env.REVIEW_API),

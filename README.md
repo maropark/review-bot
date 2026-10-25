@@ -44,7 +44,7 @@ gh variable set TRIAGE_MODEL    --body "<the cheap triage model>"     -R OWNER/R
 gh secret   set REVIEW_API_KEY  -R OWNER/REPO        # prompts for the key; nothing is echoed
 ```
 
-`TRIAGE_*` default to the `REVIEW_*` values, so one endpoint and one key cover both. With no `TRIAGE_MODEL` at all, the triage runs on rules and size only — a fine way to start.
+For the triage there are two kinds of model. An OpenAI-compatible one: `TRIAGE_*` default to the `REVIEW_*` values, so one endpoint and one key cover both. Or **TypeSafe's Jev** (see below): `TRIAGE_PROVIDER=typesafe`, `TRIAGE_MODEL=jev-latest` and a `TRIAGE_API_KEY` secret. With no triage model at all, the triage runs on rules and size only — a fine way to start.
 
 ## Providers
 
@@ -58,6 +58,12 @@ gh secret   set REVIEW_API_KEY  -R OWNER/REPO        # prompts for the key; noth
 | Anthropic | through a compatible proxy or gateway | kept out of the critical path on purpose; it works through the same interface when a proxy speaks OpenAI's API |
 
 Reasoning effort (`low` / `medium` / `high`) is sent as `reasoning_effort` (Chat) or `reasoning.effort` (Responses). A model that has no such dial answers a 400 naming the parameter; the bot drops it and retries, and the posted review says so. JSON mode is handled the same way. `REVIEW_EXTRA_HEADERS` (a JSON object) adds headers to every request — for example a Cloudflare Access service token in front of a tunnel.
+
+### TypeSafe's Jev as the triage model
+
+[Jev](https://docs.typesafe.ai/concepts/system-one.md) is a "System One" model: it does not write text, it answers typed questions over a `state` with calibrated probabilities and a confidence. That is exactly the shape of a system-1 router, so the bot has a native adapter (`src/typesafe.ts`) for `POST /v1/systemone`. Set `TRIAGE_PROVIDER=typesafe` (inferred when `TRIAGE_MODEL` starts with `jev` or `TRIAGE_BASE_URL` is TypeSafe's), `TRIAGE_MODEL=jev-latest` (or a pinned `jev-1.14.0`), and the secret `TRIAGE_API_KEY`. The review key is never sent to TypeSafe.
+
+One request carries the PR summary as named fields (title, author, labels, sizes, the file list, the description, the repo's risk labels — never the diff) and six questions: a **Choice** for the tier (`light` / `standard` / `adversarial`, each with the criteria that define it) and five speculative **Nouls** (does this touch money, auth, stored data, an external contract, or weaken a test). Code owns the policy: a `light` answer with confidence below 0.5 becomes `standard`; a flag at or above 0.75 lifts `light` to `standard`; flags at or above 0.6 are written into the decision line and handed to the reviewer as its worry. Jev's answers, probabilities and confidence are in the "Why this tier" list of the posted review. Jev cannot write the review itself; `REVIEW_*` must point at a text model.
 
 ### A local or self-hosted model
 
@@ -103,6 +109,27 @@ The reply must be one JSON object. A reply that does not validate (a clean verdi
 - For `adversary-v1` repos, optionally (`post.recordComment`) the record as an **issue comment** too, in exactly the form `/adversary` posts, so a comment-reading status such as packmaster.work's `review-record` can see it. Off by default: with the workflow's own token the comment's author has no write permission, so that status would refuse it anyway.
 - **An approval**, as a second review pinned to the same commit, when the gate below passes.
 
+## Where the bot repository can live
+
+GitHub lets a *private* repository's action be used only by repositories of the **same owner**. So for an owner that is not the consuming organization (this bot under `maropark/`, used by `xpepTechnology/*`), there are two ways:
+
+- **Public repository** (recommended): `uses: maropark/review-bot@v0.1.0` works everywhere, no token. The bot holds no secrets, so there is nothing to hide; pinning to a tag means the consuming repo decides when to move.
+- **Private repository plus a read token**: a fine-grained personal access token with read access to that one repository, stored in each consuming repo as a secret, and a checkout step before the action:
+
+  ```yaml
+      - uses: actions/checkout@v7
+        with:
+          repository: maropark/review-bot
+          ref: v0.1.0
+          token: ${{ secrets.REVIEW_BOT_TOKEN }}
+          path: .review-bot
+      - uses: ./.review-bot
+  ```
+
+  One more secret per repo, and a token that expires (a year at most) and has to be rotated.
+
+A repository owned by the consuming organization (`xpepTechnology/review-bot`) can stay private and be shared with Settings → Actions → General → Access → "Accessible from repositories in the organization".
+
 ## Approval: what counts on GitHub
 
 The gate mirrors the `/rpa` skill: approve only if **all** hold — the triage allowed it; no `blocker` or `major` is open (fixed, rebutted and deferred findings, and minors, do not block); the live head equals the reviewed head; no required check is failing (pending does not block unless `approval.requireGreenChecks`). Every failed condition is named in the job log and summary.
@@ -116,11 +143,11 @@ So there are three ways to run it:
 
 | option | what changes | what the approval means |
 |---|---|---|
-| **Post-only / advisory** (default) | nothing on GitHub beyond the Actions setting, if you want the green tick | a visible verdict; a human code owner still approves |
+| **Post-only / advisory** | nothing on GitHub beyond the Actions setting, if you want the green tick | a visible verdict; a human code owner still approves |
 | **Bot account as code owner** | a dedicated GitHub user with write access, named in `CODEOWNERS`, posting with its own token (`github-token` input) | counts for the code-owner rule — a bot alone can unlock protected paths |
-| **Plain approval count** | the ruleset's `require_code_owner_review` turned off in favour of "1 approval" | the workflow's approval counts; any write-access approval does too |
+| **Plain approval count** (what the two SKO repos chose, 2026-10-25) | the ruleset's `require_code_owner_review` turned off, `required_approving_review_count` 1, the Actions setting on | the workflow's approval counts; any write-access approval does too. The code-owner intent is carried by the risk rules instead: on those paths the bot withholds its approval, so a person's is still needed |
 
-The bot never changes rulesets, CODEOWNERS or repository settings. Those are decisions for a person.
+The bot never changes rulesets, CODEOWNERS or repository settings. Those are decisions for a person — packmaster.work keeps its desired state in `scripts/repo-settings.ts`, which asserts and applies them.
 
 ## Dry run and the command line
 

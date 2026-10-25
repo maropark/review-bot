@@ -109,7 +109,7 @@ const CLEAN_REPLY = JSON.stringify({ verdict: "clean", findings: [], considered:
 const MAJOR_REPLY = JSON.stringify({ verdict: "findings", findings: [{ id: "F1", severity: "major", where: "src/thing.ts:1", claim: "thing is wrong", scenario: "when used, it breaks" }] });
 
 function env(): EnvConfig {
-  const review: ProviderConfig = { baseUrl: "https://llm.test/v1", apiKey: "k", model: "review-model", api: "chat", timeoutMs: 1000, extraHeaders: {} };
+  const review: ProviderConfig = { provider: "openai", baseUrl: "https://llm.test/v1", apiKey: "k", model: "review-model", api: "chat", timeoutMs: 1000, extraHeaders: {} };
   return { githubToken: "t", githubApi: "https://api.github.test", review, triage: null };
 }
 
@@ -245,6 +245,30 @@ describe("run", () => {
     expect(out.approved).toBe(false);
     expect(out.approvalReasons.join()).toMatch(/Allow GitHub Actions to create and approve/);
     expect(gh.created.map((c) => c.input.event)).toEqual(["COMMENT"]);
+  });
+
+  test("a TypeSafe triage: Jev's choice sets the tier and its flags reach the reviewer as a worry", async () => {
+    const gh = new FakeGitHub();
+    const llm = new FakeLLM("review-model", [CLEAN_REPLY]);
+    const e = env();
+    e.triage = { provider: "typesafe", baseUrl: "https://api.typesafe.test", apiKey: "ts", model: "jev-latest", api: "chat", timeoutMs: 1000, extraHeaders: {} };
+    let seen: unknown = null;
+    const fakeTypeSafe = {
+      model: "jev-latest",
+      async systemOne(req: { state: unknown; questions: Record<string, unknown> }) {
+        seen = req;
+        return { model: "jev-1.14.0", answers: { tier: { type: "choice", choice: "adversarial", confidence: 0.8, probabilities: { light: 0.05, standard: 0.15, adversarial: 0.8 } }, money: { type: "noul", noul: 0.9 }, auth: { type: "noul", noul: 0.1 } } };
+      },
+    };
+    const out = await run(opts(), { gh: gh as unknown as GitHub, env: e, makeLLM: () => llm, makeTypeSafe: () => fakeTypeSafe as never, log: silentLogger });
+    expect(out.decision.tier).toBe("adversarial");
+    expect(out.decision.classifier).toBe("model");
+    expect(out.decision.reasons.join()).toContain("Jev chose adversarial");
+    expect((seen as { state: { title: string; risk_areas: string[] } }).state.title).toBe("Add the thing");
+    expect((seen as { state: { risk_areas: string[] } }).state.risk_areas).toEqual(["workflows"]);
+    expect(Object.keys((seen as { questions: Record<string, unknown> }).questions)).toContain("tier");
+    expect(llm.calls[0]!.system).toContain("flagged this change as likely touching: money (0.90)");
+    expect(llm.calls[0]!.effort).toBe("high");
   });
 
   test("dry run posts nothing and returns the bodies", async () => {

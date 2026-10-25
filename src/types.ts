@@ -89,6 +89,8 @@ export interface Decision {
   forced: ForcedRule[];
   reasons: string[];
   classifier: "rules" | "model" | "fallback";
+  /** What the triage thinks the change touches, handed to the reviewer as a worry. */
+  worry?: string;
   signals: {
     files: number;
     additions: number;

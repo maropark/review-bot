@@ -26,6 +26,7 @@ import {
   type BotData,
 } from "./record.ts";
 import { classifierPrompts, formatDecisionLine, parseClassifierReply, triage, type Classifier } from "./triage.ts";
+import { TypeSafe, typesafeClassifier } from "./typesafe.ts";
 import type { Decision, Finding, Logger, PRSignals, ReviewResult } from "./types.ts";
 
 export interface RunOptions {
@@ -51,6 +52,8 @@ export interface RunDeps {
   gh: GitHub;
   env: EnvConfig;
   makeLLM: (cfg: ProviderConfig) => LLM;
+  /** Test seam for the TypeSafe triage client. */
+  makeTypeSafe?: (cfg: ProviderConfig) => TypeSafe;
   log: Logger;
   sleep?: (ms: number) => Promise<void>;
 }
@@ -144,7 +147,9 @@ export async function run(opts: RunOptions, deps: RunDeps): Promise<RunOutcome> 
   };
 
   let classifier: Classifier | undefined;
-  if (env.triage) {
+  if (env.triage?.provider === "typesafe") {
+    classifier = typesafeClassifier(deps.makeTypeSafe ? deps.makeTypeSafe(env.triage) : new TypeSafe(env.triage), log);
+  } else if (env.triage) {
     const triageCfg = env.triage;
     classifier = async (input) => {
       const llm = deps.makeLLM(triageCfg);
@@ -244,7 +249,8 @@ export async function run(opts: RunOptions, deps: RunDeps): Promise<RunOutcome> 
     const priorIds = new Set(allPrior.map((f) => f.id));
 
     const llm = deps.makeLLM({ ...env.review, model: decision.model });
-    const promptBase = { signals, decision, config, diff: diff.text, diffBytes, diffTruncated: diff.truncated, protocolFiles, inlineFiles, prior, nextId, worry: opts.worry };
+    const worry = [opts.worry, decision.worry].filter(Boolean).join(" ") || undefined;
+    const promptBase = { signals, decision, config, diff: diff.text, diffBytes, diffTruncated: diff.truncated, protocolFiles, inlineFiles, prior, nextId, worry };
     let problems: string[] = [];
     let parsed: ReviewResult | null = null;
     let lastText = "";
