@@ -75,7 +75,12 @@ class FakeGitHub {
   async getBranchRules() {
     return [{ type: "required_status_checks", parameters: { required_status_checks: [{ context: "verified" }] } }];
   }
-  async getContent(_repo: string, path: string) {
+  /** Contents by ref; `contents` is the head, `baseContents` the base (falls back to head when a path is absent there). */
+  baseContents: Record<string, string> | null = null;
+  reads: { path: string; ref: string }[] = [];
+  async getContent(_repo: string, path: string, ref: string) {
+    this.reads.push({ path, ref });
+    if (this.baseContents && ref === OTHER) return this.baseContents[path] ?? null;
     return this.contents[path] ?? null;
   }
   async createReview(_repo: string, _n: number, input: { commit_id: string; body: string; event: string }) {
@@ -114,7 +119,7 @@ function env(): EnvConfig {
 }
 
 function opts(over: Partial<RunOptions> = {}): RunOptions {
-  return { repo: "acme/widgets", pr: 7, dryRun: false, force: false, triageOnly: false, waitForChecksMinutes: 0, configPath: ".github/review-bot.json", checkoutDir: null, version: "v0.1.0", ...over };
+  return { repo: "acme/widgets", pr: 7, dryRun: false, force: false, triageOnly: false, waitForChecksMinutes: 0, configPath: ".github/review-bot.json", checkoutDir: null, policyRef: "head", version: "v0.1.0", ...over };
 }
 
 function deps(gh: FakeGitHub, llms: LLM[]) {
@@ -279,6 +284,36 @@ describe("run", () => {
     expect(out.decision.classifier).toBe("fallback");
     expect(out.decision.reasons.join()).toContain("TRIAGE_API_KEY");
     expect(gh.created.map((c) => c.input.event)).toEqual(["COMMENT", "APPROVE"]);
+  });
+
+  test("policy-ref base: the config, protocol file and CODEOWNERS come from the base sha, the changed files from the head", async () => {
+    const gh = new FakeGitHub();
+    gh.baseContents = { ...gh.contents };
+    await run(opts({ policyRef: "base" }), deps(gh, [new FakeLLM("review-model", [CLEAN_REPLY])]));
+    const at = (path: string) => gh.reads.filter((r) => r.path === path).map((r) => r.ref);
+    expect(at(".github/review-bot.json")).toEqual([OTHER]);
+    expect(at("AGENTS.md")).toEqual([OTHER]);
+    expect(at(".github/CODEOWNERS")).toEqual([OTHER]);
+    expect(at("src/thing.ts")).toEqual([HEAD]);
+  });
+
+  test("a PR that rewrites review-bot.json to drop the rule that vetoes it is still judged by the base's rule", async () => {
+    const gh = new FakeGitHub();
+    gh.files = [
+      { filename: "supabase/migrations/0001_x.sql", status: "added", additions: 5, deletions: 0 },
+      { filename: ".github/review-bot.json", status: "modified", additions: 1, deletions: 1 },
+    ];
+    gh.baseContents = { ...gh.contents, ".github/review-bot.json": JSON.stringify({ risk: [{ label: "migrations", paths: ["supabase/migrations/**"] }] }) };
+    gh.contents[".github/review-bot.json"] = JSON.stringify({ risk: [] }); // the head's policy: no rules
+    gh.contents["supabase/migrations/0001_x.sql"] = "alter table x add y int;";
+    const head = await run(opts({ policyRef: "head" }), deps(gh, [new FakeLLM("review-model", [CLEAN_REPLY])]));
+    expect(head.decision.forced.length).toBe(0); // the hole, when the head is trusted
+    gh.created = [];
+    // force: the first run left a review pinned to this head, which would otherwise be reused
+    const base = await run(opts({ policyRef: "base", force: true }), deps(gh, [new FakeLLM("review-model", [CLEAN_REPLY])]));
+    expect(base.decision.forced.map((f) => f.rule)).toEqual(["migrations"]);
+    expect(base.decision.may_approve).toBe(false);
+    expect(gh.created.map((c) => c.input.event)).toEqual(["COMMENT"]);
   });
 
   test("dry run posts nothing and returns the bodies", async () => {

@@ -21,6 +21,7 @@ usage:
 options:
   --checkout <dir>       the PR head checked out locally (default: read files through the API)
   --config <path>        repo config (default .github/review-bot.json)
+  --policy-ref <ref>     where the config, protocol files and CODEOWNERS are read: base (default), head, or a sha
   --dry-run              print the decision and the review; post nothing
   --force                review again even if a review is already pinned to the head
   --wait-checks <min>    wait up to this long for pending required checks before deciding to approve
@@ -90,6 +91,7 @@ async function main(): Promise<void> {
       waitForChecksMinutes: Number(flags["wait-checks"] ?? 0),
       configPath: String(flags.config ?? defaultConfigPath()),
       checkoutDir: flags.checkout ? String(flags.checkout) : null,
+      policyRef: String(flags["policy-ref"] ?? "base"),
       ...(flags.worry ? { worry: String(flags.worry) } : {}),
       version: VERSION,
     },

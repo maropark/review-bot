@@ -18,7 +18,7 @@ Three things go into the repository that wants reviews.
 **1. The workflow** — copy [`examples/review-bot.yml`](examples/review-bot.yml) to `.github/workflows/review-bot.yml` and pin the tag:
 
 ```yaml
-      - uses: maropark/review-bot@v0.2.0
+      - uses: maropark/review-bot@v0.3.0
 ```
 
 It runs on `pull_request` `ready_for_review` and `synchronize` (drafts, Dependabot and fork PRs are skipped), and can be run by hand from the Actions tab (`workflow_dispatch` with a PR number). The workflow's own token is enough to post a review; see [Approval](#approval-what-counts-on-github) for what it takes to approve.
@@ -122,11 +122,19 @@ The reply must be one JSON object. A reply that does not validate (a clean verdi
 - For `adversary-v1` repos, optionally (`post.recordComment`) the record as an **issue comment** too, in exactly the form `/adversary` posts, so a comment-reading status such as packmaster.work's `review-record` can see it. Off by default: with the workflow's own token the comment's author has no write permission, so that status would refuse it anyway.
 - **An approval**, as a second review pinned to the same commit, when the gate below passes.
 
+## Trust model: what a PR can and cannot change about its own review
+
+These came out of the bot's own first two rounds on the PRs that installed it, and each is pinned by a test or by packmaster.work's workflow lint:
+
+- **The workflow runs from the base branch.** The example workflow uses `pull_request_target`, not `pull_request`, so a PR cannot edit the steps that judge it; a change to the workflow is reviewed first, lands, and only then applies. The price is a write token next to a checkout of untrusted code, which is why the job is exactly two steps — the checkout (credentials not persisted) and the pinned action — and nothing from the checkout runs. A consequence: the PR that *adds* the workflow cannot trigger it; use `workflow_dispatch` until it merges.
+- **The policy is read from the base branch.** `review-bot.json`, the protocol files and CODEOWNERS are read at the PR's base commit (`policy-ref: base`, the default), so a PR that rewrites the risk rules to drop the rule that would veto it is still judged by the base's rules. The diff and the changed files are, of course, the head's.
+- **What only GitHub can close.** With "Allow GitHub Actions to create and approve pull requests" on, *any* workflow in the repository can approve, and a PR can add one, or a contributor can dispatch a modified copy on their branch. The bot cannot prevent that; a ruleset can: **require review from code owners** for `.github/` and the other protected paths, so a bot approval never satisfies a PR that touches them, while it still counts for every PR that does not. The bot's risk rules withhold its own approval on exactly those paths, so nothing is lost.
+
 ## Where the bot repository can live
 
 GitHub lets a *private* repository's action be used only by repositories of the **same owner**. So for an owner that is not the consuming organization (this bot under `maropark/`, used by `xpepTechnology/*`), there are two ways:
 
-- **Public repository** (recommended): `uses: maropark/review-bot@v0.2.0` works everywhere, no token. The bot holds no secrets, so there is nothing to hide; pinning to a tag means the consuming repo decides when to move.
+- **Public repository** (recommended): `uses: maropark/review-bot@v0.3.0` works everywhere, no token. The bot holds no secrets, so there is nothing to hide; pinning to a tag means the consuming repo decides when to move.
 - **Private repository plus a read token**: a fine-grained personal access token with read access to that one repository, stored in each consuming repo as a secret, and a checkout step before the action:
 
   ```yaml

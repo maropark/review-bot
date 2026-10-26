@@ -1,9 +1,12 @@
 # Drop this in <repo>/.github/workflows/review-bot.yml and pin the tag.
 name: Review bot
 
+# pull_request_target, not pull_request: the BASE branch's copy of this file
+# judges every PR, so a PR cannot edit its own reviewer. `opened` because a PR
+# opened ready never emits ready_for_review; the job still skips drafts.
 on:
-  pull_request:
-    types: [ready_for_review, synchronize]
+  pull_request_target:
+    types: [opened, reopened, ready_for_review, synchronize]
   workflow_dispatch:
     inputs:
       pr:
@@ -40,10 +43,14 @@ jobs:
     steps:
       # The PR HEAD, not the merge commit: the review pins the head sha, and the
       # protocol files and changed files are read from this tree.
+      # Data only: nothing from this checkout runs, and the write token is not
+      # left in its git config. The policy (review-bot.json, protocol files,
+      # CODEOWNERS) is read from the base branch by the action itself.
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha || format('refs/pull/{0}/head', inputs.pr) }}
-      - uses: maropark/review-bot@v0.2.0
+          persist-credentials: false
+      - uses: maropark/review-bot@v0.3.0
         env:
           REVIEW_BASE_URL: ${{ vars.REVIEW_BASE_URL }}
           REVIEW_MODEL: ${{ vars.REVIEW_MODEL }}
@@ -58,3 +65,4 @@ jobs:
           pr: ${{ inputs.pr }}
           force: ${{ inputs.force }}
           dry-run: ${{ inputs.dry-run }}
+          policy-ref: base

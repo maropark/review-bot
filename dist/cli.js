@@ -1124,7 +1124,7 @@ ${f.text}`).join(`
     input.worry ? `
 What the person who asked for this review is worried about: ${input.worry}` : "",
     "",
-    `## The repository's review protocol and domain rules (read from the repository at ${signals.headSha.slice(0, 12)})`,
+    `## The repository's review protocol and domain rules (read from the repository's base branch)`,
     "",
     protocol,
     "",
@@ -1541,9 +1541,14 @@ async function run(opts, deps) {
   const headSha = pr.head.sha;
   log.info(`${opts.repo}#${pr.number} "${pr.title}" by ${pr.user.login} · head ${headSha.slice(0, 12)} · ${pr.draft ? "draft" : pr.state} · ${files.length} files`);
   const read = fileReader(gh, opts.repo, headSha, opts.checkoutDir, log);
-  const configText = await read(opts.configPath);
+  const policySha = opts.policyRef === "head" ? null : opts.policyRef === "base" ? pr.base.sha : opts.policyRef;
+  const readPolicy = policySha ? (path) => gh.getContent(opts.repo, path, policySha) : read;
+  const policyWhere = policySha ? `${policySha === pr.base.sha ? "the base" : "ref"} ${policySha.slice(0, 12)}` : `the head ${headSha.slice(0, 12)}`;
+  const configText = await readPolicy(opts.configPath);
   if (configText === null)
-    log.warn(`${opts.configPath} not found at the head; using the built-in defaults (generic protocol, no risk rules)`);
+    log.warn(`${opts.configPath} not found at ${policyWhere}; using the built-in defaults (generic protocol, no risk rules)`);
+  else
+    log.info(`policy: ${opts.configPath} read from ${policyWhere}`);
   const config = parseRepoConfigText(configText);
   const checks = await readChecks(gh, opts.repo, pr.base.ref, headSha, config.requiredChecks);
   log.info(`checks: ${describeChecks(checks)}`);
@@ -1629,9 +1634,9 @@ async function run(opts, deps) {
     const diff = truncate(rawDiff, config.limits.maxDiffBytes);
     const protocolFiles = [];
     for (const path of config.protocol.files) {
-      const text = await read(path);
+      const text = await readPolicy(path);
       if (text === null) {
-        log.warn(`protocol file ${path} is not in the repository at ${headSha.slice(0, 12)}; skipping it`);
+        log.warn(`protocol file ${path} is not in the repository at ${policyWhere}; skipping it`);
         continue;
       }
       const t = truncate(text, config.limits.maxProtocolBytes);
@@ -1763,7 +1768,7 @@ ${lastText.slice(0, 4000)}`);
       const m = parseBotMarker(r.body);
       return m?.kind === "approval" && m.sha === headSha.toLowerCase() && r.state.toUpperCase() === "APPROVED";
     });
-    const ownersText = await read(".github/CODEOWNERS") ?? await read("CODEOWNERS") ?? await read("docs/CODEOWNERS");
+    const ownersText = await readPolicy(".github/CODEOWNERS") ?? await readPolicy("CODEOWNERS") ?? await readPolicy("docs/CODEOWNERS");
     const owned = ownersText ? ownedPaths(parseCodeowners(ownersText), files.map((f) => f.filename)) : [];
     approvalBody = renderApprovalBody({ version: opts.version, sha: headSha, decision, review, checks: liveChecks, owned, decisionLine });
     if (already) {
@@ -1800,7 +1805,7 @@ function defaultConfigPath() {
 }
 
 // src/version.ts
-var VERSION = "v0.2.0";
+var VERSION = "v0.3.0";
 
 // src/cli.ts
 var USAGE = `review-bot ${VERSION}
@@ -1813,6 +1818,7 @@ usage:
 options:
   --checkout <dir>       the PR head checked out locally (default: read files through the API)
   --config <path>        repo config (default .github/review-bot.json)
+  --policy-ref <ref>     where the config, protocol files and CODEOWNERS are read: base (default), head, or a sha
   --dry-run              print the decision and the review; post nothing
   --force                review again even if a review is already pinned to the head
   --wait-checks <min>    wait up to this long for pending required checks before deciding to approve
@@ -1883,6 +1889,7 @@ async function main() {
     waitForChecksMinutes: Number(flags["wait-checks"] ?? 0),
     configPath: String(flags.config ?? defaultConfigPath()),
     checkoutDir: flags.checkout ? String(flags.checkout) : null,
+    policyRef: String(flags["policy-ref"] ?? "base"),
     ...flags.worry ? { worry: String(flags.worry) } : {},
     version: VERSION
   }, { gh: new GitHub(token, env.githubApi), env, makeLLM: (cfg) => new OpenAICompatible(cfg), log });

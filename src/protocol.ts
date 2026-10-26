@@ -81,7 +81,7 @@ export function buildPrompts(input: PromptInput): { system: string; user: string
     `Review tier — ${tierBrief(decision)}`,
     input.worry ? `\nWhat the person who asked for this review is worried about: ${input.worry}` : "",
     "",
-    `## The repository's review protocol and domain rules (read from the repository at ${signals.headSha.slice(0, 12)})`,
+    `## The repository's review protocol and domain rules (read from the repository's base branch)`,
     "",
     protocol,
     "",

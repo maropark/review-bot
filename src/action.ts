@@ -66,6 +66,7 @@ async function main(): Promise<void> {
       waitForChecksMinutes: Number(input("wait-for-checks-minutes") || 0),
       configPath: input("config") || defaultConfigPath(),
       checkoutDir: input("checkout") || process.env.GITHUB_WORKSPACE || null,
+      policyRef: input("policy-ref") || "base",
       ...(input("worry") ? { worry: input("worry") } : {}),
       version: VERSION,
     },

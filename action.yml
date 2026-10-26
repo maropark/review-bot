@@ -22,8 +22,14 @@ inputs:
     description: Directory where the PR HEAD is checked out; protocol files and changed files are read from it. Defaults to the workspace. Empty string → read through the API.
     default: ${{ github.workspace }}
   config:
-    description: Path of the repository's review-bot config, relative to the checkout.
+    description: Path of the repository's review-bot config.
     default: .github/review-bot.json
+  policy-ref:
+    description: >-
+      Where the policy — review-bot.json, the protocol files, CODEOWNERS — is read from.
+      "base" (default) reads them at the PR's base commit through the API, so a PR cannot
+      edit the rules that judge it; "head" reads them from the checkout; a sha reads them there.
+    default: base
   dry-run:
     description: Print the decision and the review it would post; post nothing.
     default: "false"

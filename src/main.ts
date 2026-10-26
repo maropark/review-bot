@@ -39,6 +39,13 @@ export interface RunOptions {
   configPath: string;
   /** Where the PR head is checked out. null → every file is read through the API at the head sha. */
   checkoutDir: string | null;
+  /**
+   * Where the POLICY is read from — review-bot.json, the protocol files, CODEOWNERS.
+   * "base" (the default) reads them at the PR's base sha through the API, so a PR
+   * cannot edit the rules that judge it; "head" reads them from the checkout; a
+   * sha reads them there.
+   */
+  policyRef: "base" | "head" | string;
   worry?: string;
   version: string;
 }
@@ -118,8 +125,15 @@ export async function run(opts: RunOptions, deps: RunDeps): Promise<RunOutcome> 
   log.info(`${opts.repo}#${pr.number} "${pr.title}" by ${pr.user.login} · head ${headSha.slice(0, 12)} · ${pr.draft ? "draft" : pr.state} · ${files.length} files`);
 
   const read = fileReader(gh, opts.repo, headSha, opts.checkoutDir, log);
-  const configText = await read(opts.configPath);
-  if (configText === null) log.warn(`${opts.configPath} not found at the head; using the built-in defaults (generic protocol, no risk rules)`);
+  // The policy is trusted input and the PR is not: a PR that rewrites
+  // review-bot.json to drop the rule that would veto it must still be judged
+  // by the base branch's rule (the bot's own F3 on epeptides#96).
+  const policySha = opts.policyRef === "head" ? null : opts.policyRef === "base" ? pr.base.sha : opts.policyRef;
+  const readPolicy: Reader = policySha ? (path) => gh.getContent(opts.repo, path, policySha) : read;
+  const policyWhere = policySha ? `${policySha === pr.base.sha ? "the base" : "ref"} ${policySha.slice(0, 12)}` : `the head ${headSha.slice(0, 12)}`;
+  const configText = await readPolicy(opts.configPath);
+  if (configText === null) log.warn(`${opts.configPath} not found at ${policyWhere}; using the built-in defaults (generic protocol, no risk rules)`);
+  else log.info(`policy: ${opts.configPath} read from ${policyWhere}`);
   const config: RepoConfig = parseRepoConfigText(configText);
 
   const checks = await readChecks(gh, opts.repo, pr.base.ref, headSha, config.requiredChecks);
@@ -220,9 +234,9 @@ export async function run(opts: RunOptions, deps: RunDeps): Promise<RunOutcome> 
 
     const protocolFiles: ProtocolFile[] = [];
     for (const path of config.protocol.files) {
-      const text = await read(path);
+      const text = await readPolicy(path);
       if (text === null) {
-        log.warn(`protocol file ${path} is not in the repository at ${headSha.slice(0, 12)}; skipping it`);
+        log.warn(`protocol file ${path} is not in the repository at ${policyWhere}; skipping it`);
         continue;
       }
       const t = truncate(text, config.limits.maxProtocolBytes);
@@ -352,7 +366,7 @@ export async function run(opts: RunOptions, deps: RunDeps): Promise<RunOutcome> 
       const m = parseBotMarker(r.body);
       return m?.kind === "approval" && m.sha === headSha.toLowerCase() && r.state.toUpperCase() === "APPROVED";
     });
-    const ownersText = (await read(".github/CODEOWNERS")) ?? (await read("CODEOWNERS")) ?? (await read("docs/CODEOWNERS"));
+    const ownersText = (await readPolicy(".github/CODEOWNERS")) ?? (await readPolicy("CODEOWNERS")) ?? (await readPolicy("docs/CODEOWNERS"));
     const owned = ownersText ? ownedPaths(parseCodeowners(ownersText), files.map((f) => f.filename)) : [];
     approvalBody = renderApprovalBody({ version: opts.version, sha: headSha, decision, review, checks: liveChecks, owned, decisionLine });
     if (already) {
