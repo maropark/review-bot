@@ -37,7 +37,7 @@ describe("repo config", () => {
     ["risk without paths", { risk: [{ label: "x", paths: [] }] }],
     ["risk tier skip", { risk: [{ label: "x", paths: ["y"], tier: "skip" }] }],
     ["size inverted", { size: { light: 500, standard: 100 } }],
-    ["bad effort", { tiers: { light: { effort: "max" } } }],
+    ["bad effort", { tiers: { light: { effort: "ultra" } } }],
     ["unknown tier", { tiers: { ultra: { effort: "high" } } }],
     ["approval tier typo", { approval: { tiers: ["lite"] } }],
     ["not an object", [1, 2]],
