@@ -1,13 +1,111 @@
 {
   "owner": "maropark",
-  "protocol": { "kind": "generic", "files": ["AGENTS.md"] },
+  "protocol": {
+    "kind": "generic",
+    "files": [
+      "AGENTS.md"
+    ]
+  },
   "risk": [
-    { "label": "the gate", "paths": [".github/**", "vercel.json", "next.config.ts", "package.json", "package-lock.json"] },
-    { "label": "supabase and migrations", "paths": ["supabase/**", "lib/supabase/**", "proxy.ts"] },
-    { "label": "payments and checkout", "paths": ["lib/snappay*", "lib/cardshield*", "lib/nmi*", "lib/link-money*", "lib/muadata*", "lib/payment-*", "lib/order-confirm.ts", "lib/give*", "lib/api/checkout-*", "lib/api/payment-*", "app/api/payments/**", "app/api/checkout/**", "app/api/order-submit/**", "app/checkout/**", "app/payment/**", "lib/controlled-checkout-promos.ts"] },
-    { "label": "auth and access", "paths": ["lib/admin-auth.ts", "lib/admin/access.ts", "lib/sales/access.ts", "lib/api/route-auth.ts", "lib/api/cron-auth.ts", "lib/api/auth-contracts.ts", "app/api/auth/**", "app/auth/**", "lib/integrations/packmaster/auth.ts"] },
-    { "label": "cross-system contracts", "paths": ["lib/integrations/**", "lib/nightowl/**", "app/api/integrations/**", "app/api/nightowl/**"] }
+    {
+      "label": "the gate",
+      "paths": [
+        ".github/**",
+        "vercel.json",
+        "next.config.ts",
+        "package.json",
+        "package-lock.json"
+      ]
+    },
+    {
+      "label": "supabase and migrations",
+      "paths": [
+        "supabase/**",
+        "lib/supabase/**",
+        "proxy.ts"
+      ],
+      "model": "gpt-6-astra",
+      "effort": "high"
+    },
+    {
+      "label": "payments and checkout",
+      "paths": [
+        "lib/snappay*",
+        "lib/cardshield*",
+        "lib/nmi*",
+        "lib/link-money*",
+        "lib/muadata*",
+        "lib/payment-*",
+        "lib/order-confirm.ts",
+        "lib/give*",
+        "lib/api/checkout-*",
+        "lib/api/payment-*",
+        "app/api/payments/**",
+        "app/api/checkout/**",
+        "app/api/order-submit/**",
+        "app/checkout/**",
+        "app/payment/**",
+        "lib/controlled-checkout-promos.ts"
+      ],
+      "model": "gpt-6-astra",
+      "effort": "high"
+    },
+    {
+      "label": "auth and access",
+      "paths": [
+        "lib/admin-auth.ts",
+        "lib/admin/access.ts",
+        "lib/sales/access.ts",
+        "lib/api/route-auth.ts",
+        "lib/api/cron-auth.ts",
+        "lib/api/auth-contracts.ts",
+        "app/api/auth/**",
+        "app/auth/**",
+        "lib/integrations/packmaster/auth.ts"
+      ],
+      "model": "gpt-6-astra",
+      "effort": "high"
+    },
+    {
+      "label": "cross-system contracts",
+      "paths": [
+        "lib/integrations/**",
+        "lib/nightowl/**",
+        "app/api/integrations/**",
+        "app/api/nightowl/**"
+      ]
+    }
   ],
-  "skip": { "labels": ["review:waived"], "authors": ["dependabot[bot]"] },
-  "approval": { "enabled": true, "tiers": ["light", "standard", "adversarial"], "requireGreenChecks": false, "requestChangesOnBlocker": false }
+  "skip": {
+    "labels": [
+      "review:waived"
+    ],
+    "authors": [
+      "dependabot[bot]"
+    ]
+  },
+  "approval": {
+    "enabled": true,
+    "tiers": [
+      "light",
+      "standard",
+      "adversarial"
+    ],
+    "requireGreenChecks": false,
+    "requestChangesOnBlocker": false
+  },
+  "tiers": {
+    "light": {
+      "model": "gpt-6-luna",
+      "effort": "medium"
+    },
+    "standard": {
+      "model": "gpt-6.1-sol",
+      "effort": "medium"
+    },
+    "adversarial": {
+      "model": "gpt-6.1-sol",
+      "effort": "high"
+    }
+  }
 }

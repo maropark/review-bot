@@ -142,6 +142,41 @@ describe("approval policy and models", () => {
   });
 });
 
+describe("a risk rule may name its own model and effort", () => {
+  const MODELS = config({
+    tiers: { light: { model: "luna", effort: "medium" }, standard: { model: "sol", effort: "medium" }, adversarial: { model: "sol", effort: "high" } },
+    risk: [
+      { label: "the gate", paths: [".github/**"], tier: "adversarial", approve: false },
+      { label: "migrations", paths: ["supabase/migrations/**"], tier: "adversarial", approve: false, model: "astra", effort: "high" },
+      { label: "payments", paths: ["lib/pay/**"], tier: "adversarial", approve: false, model: "astra", effort: "xhigh" },
+      { label: "docs that matter", paths: ["docs/DEPLOY.md"], tier: "standard", approve: true, effort: "low" },
+    ],
+  });
+  test("a rule without a model uses the tier's model and effort", async () => {
+    const d = await triage(signals({ files: [file(".github/workflows/ci.yml")] }), MODELS, "default", never);
+    expect([d.model, d.effort]).toEqual(["sol", "high"]);
+  });
+  test("a rule with a model and effort overrides the tier's", async () => {
+    const d = await triage(signals({ files: [file("supabase/migrations/x.sql")] }), MODELS, "default", never);
+    expect([d.tier, d.model, d.effort]).toEqual(["adversarial", "astra", "high"]);
+    expect(d.reasons.join()).toContain('risk rule "migrations" sets the model astra at effort high');
+  });
+  test("with several matched rules, the one asking the most effort decides both", async () => {
+    const d = await triage(signals({ files: [file("supabase/migrations/x.sql"), file("lib/pay/charge.ts"), file(".github/workflows/ci.yml")] }), MODELS, "default", never);
+    expect([d.model, d.effort]).toEqual(["astra", "xhigh"]);
+  });
+  test("an effort-only rule keeps the tier's model", async () => {
+    const d = await triage(signals({ files: [file("docs/DEPLOY.md")] }), MODELS, "default", never);
+    expect([d.tier, d.model, d.effort, d.may_approve]).toEqual(["standard", "sol", "low", true]);
+  });
+  test("the unforced tiers use their own models", async () => {
+    const light = await triage(signals({ files: [file("README.md", 3, 1)] }), MODELS, "default", never);
+    expect([light.model, light.effort]).toEqual(["luna", "medium"]);
+    const adv = await triage(signals(), MODELS, "default", async () => ({ tier: "adversarial", reason: "x" }));
+    expect([adv.model, adv.effort]).toEqual(["sol", "high"]);
+  });
+});
+
 describe("small parsers", () => {
   test("isMajorBump", () => {
     expect(isMajorBump("Bump next from 16.3.8 to 16.4.3")).toBe(false);

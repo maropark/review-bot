@@ -24,7 +24,9 @@
           "label": { "type": "string" },
           "paths": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
           "tier": { "enum": ["light", "standard", "adversarial"], "default": "adversarial" },
-          "approve": { "type": "boolean", "default": false, "description": "May the bot still approve when this rule matched?" }
+          "approve": { "type": "boolean", "default": false, "description": "May the bot still approve when this rule matched?" },
+          "model": { "type": "string", "description": "The model these paths deserve, over the tier's. Among several matched rules, the highest effort wins." },
+          "effort": { "enum": ["none", "low", "medium", "high", "xhigh", "max"] }
         }
       }
     },
@@ -88,7 +90,7 @@
       "additionalProperties": false,
       "properties": {
         "model": { "type": "string", "description": "Overrides REVIEW_MODEL for this tier." },
-        "effort": { "enum": ["none", "low", "medium", "high"] }
+        "effort": { "enum": ["none", "low", "medium", "high", "xhigh", "max"] }
       }
     }
   }

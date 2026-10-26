@@ -13,7 +13,7 @@
  */
 
 import type { Effort, Tier } from "./types.ts";
-import { REVIEW_TIERS } from "./types.ts";
+import { EFFORTS, REVIEW_TIERS } from "./types.ts";
 
 export type ApiKind = "chat" | "responses";
 /** `openai` is any OpenAI-compatible text endpoint; `typesafe` is TypeSafe's System One API (triage only — Jev does not write reviews). */
@@ -140,6 +140,10 @@ export interface RiskRule {
   tier: Exclude<Tier, "skip">;
   /** Whether the bot may still approve when this rule matched. Default: false. */
   approve: boolean;
+  /** The model these paths deserve, over the tier's. When several matched rules name one, the highest effort wins. */
+  model?: string;
+  /** The effort these paths deserve, over the tier's. */
+  effort?: Effort;
 }
 
 export interface TierSettings {
@@ -229,7 +233,6 @@ function int(v: unknown, where: string, fallback: number): number {
   return v;
 }
 
-const EFFORTS: readonly Effort[] = ["none", "low", "medium", "high"];
 const TIERS: readonly Tier[] = ["skip", "light", "standard", "adversarial"];
 
 function effort(v: unknown, where: string, fallback: Effort): Effort {
@@ -264,7 +267,16 @@ export function parseRepoConfig(raw: unknown): RepoConfig {
       if (paths.length === 0) throw new ConfigError(`risk[${i}].paths must name at least one glob`);
       const tier = r.tier ?? "adversarial";
       if (!REVIEW_TIERS.includes(tier as Exclude<Tier, "skip">)) throw new ConfigError(`risk[${i}].tier must be one of ${REVIEW_TIERS.join(", ")}`);
-      risk.push({ label: r.label, paths, tier: tier as Exclude<Tier, "skip">, approve: bool(r.approve, `risk[${i}].approve`, false) });
+      if (r.model !== undefined && (typeof r.model !== "string" || !r.model.trim())) throw new ConfigError(`risk[${i}].model must be a non-empty string`);
+      const ruleEffort = r.effort === undefined ? undefined : effort(r.effort, `risk[${i}].effort`, "high");
+      risk.push({
+        label: r.label,
+        paths,
+        tier: tier as Exclude<Tier, "skip">,
+        approve: bool(r.approve, `risk[${i}].approve`, false),
+        ...(typeof r.model === "string" ? { model: r.model.trim() } : {}),
+        ...(ruleEffort ? { effort: ruleEffort } : {}),
+      });
     });
   }
 

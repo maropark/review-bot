@@ -11,7 +11,7 @@
 import type { RepoConfig } from "./config.ts";
 import { matchAny } from "./glob.ts";
 import type { ChangedFile, Decision, Effort, ForcedRule, PRSignals, Tier } from "./types.ts";
-import { strongerTier } from "./types.ts";
+import { effortRank, strongerTier } from "./types.ts";
 
 export interface ClassifierInput {
   signals: PRSignals;
@@ -39,7 +39,7 @@ export function forcedRules(files: ChangedFile[], config: RepoConfig): ForcedRul
   const out: ForcedRule[] = [];
   for (const rule of config.risk) {
     const hits = files.filter((f) => matchAny(rule.paths, f.filename) || (f.previous_filename ? matchAny(rule.paths, f.previous_filename) : false)).map((f) => f.filename);
-    if (hits.length) out.push({ rule: rule.label, tier: rule.tier, approve: rule.approve, paths: hits });
+    if (hits.length) out.push({ rule: rule.label, tier: rule.tier, approve: rule.approve, paths: hits, ...(rule.model ? { model: rule.model } : {}), ...(rule.effort ? { effort: rule.effort } : {}) });
   }
   return out;
 }
@@ -142,8 +142,19 @@ export async function triage(signals: PRSignals, config: RepoConfig, defaultMode
   if (owner) reasons.push(`author ${signals.author} is the configured owner (a signal, not a permission)`);
 
   const settings = tier === "skip" ? null : config.tiers[tier];
-  const effort: Effort = settings ? settings.effort : "none";
-  const model = settings ? settings.model ?? defaultModel : "";
+  let effort: Effort = settings ? settings.effort : "none";
+  let model = settings ? settings.model ?? defaultModel : "";
+  // A matched risk rule may name the model and effort its paths deserve. With
+  // several, the one asking for the most effort decides both (ties: config order).
+  if (tier !== "skip") {
+    const naming = forced.filter((f) => f.model || f.effort);
+    if (naming.length) {
+      const pick = naming.reduce((best, f) => (effortRank(f.effort ?? effort) > effortRank(best.effort ?? effort) ? f : best));
+      if (pick.model) model = pick.model;
+      if (pick.effort) effort = pick.effort;
+      reasons.push(`risk rule "${pick.rule}" sets the model${pick.model ? ` ${pick.model}` : ""}${pick.effort ? ` at effort ${pick.effort}` : ""}`);
+    }
+  }
 
   return {
     tier,

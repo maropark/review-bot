@@ -2,23 +2,129 @@
   "owner": "maropark",
   "protocol": {
     "kind": "adversary-v1",
-    "files": ["AGENTS.md", "docs/CODE-REVIEW.md", ".claude/agents/adversary.md"]
+    "files": [
+      "AGENTS.md",
+      "docs/CODE-REVIEW.md",
+      ".claude/agents/adversary.md"
+    ]
   },
   "risk": [
-    { "label": "the gate and the deploys", "paths": [".github/**", "wrangler.jsonc", "scripts/workflow-lint.ts", "scripts/repo-invariants.ts", "scripts/repo-settings.ts", "scripts/check-promotable.ts", "scripts/gate-already-passed.ts", "scripts/patch-wrangler-*.mjs", "package.json", "bunfig.toml"] },
-    { "label": "migrations", "paths": ["supabase/migrations/**"] },
-    { "label": "money, postage and labels", "paths": ["src/lib/labels*", "src/lib/label-*", "src/lib/shipping*", "src/lib/easypost*", "src/lib/ehub*", "src/lib/*rate*", "src/lib/buy-*", "src/lib/customs*", "src/lib/commercial-invoice*"] },
-    { "label": "inventory and the queue", "paths": ["src/lib/*stock*", "src/lib/*inventory*", "src/lib/*on-hand*", "src/lib/*queue*", "src/lib/committed*"] },
-    { "label": "auth, roles and public routes", "paths": ["src/lib/roles.server.ts", "src/lib/permissions.ts", "src/lib/auth-*", "src/lib/cron-auth.server.ts", "src/routes/api/public/**", "src/components/auth-gate.tsx"] },
-    { "label": "cross-system contracts", "paths": ["src/lib/*.functions.ts", "src/lib/*-push.server.ts", "src/integrations/**"] },
-    { "label": "tests, fixtures and invariants", "paths": ["scripts/*-fixtures.ts", "scripts/go-live-check.ts", "scripts/run-fixture-suites.ts", "e2e/**", "playwright.config.ts"] }
+    {
+      "label": "the gate and the deploys",
+      "paths": [
+        ".github/**",
+        "wrangler.jsonc",
+        "scripts/workflow-lint.ts",
+        "scripts/repo-invariants.ts",
+        "scripts/repo-settings.ts",
+        "scripts/check-promotable.ts",
+        "scripts/gate-already-passed.ts",
+        "scripts/patch-wrangler-*.mjs",
+        "package.json",
+        "bunfig.toml"
+      ]
+    },
+    {
+      "label": "migrations",
+      "paths": [
+        "supabase/migrations/**"
+      ],
+      "model": "gpt-6-astra",
+      "effort": "high"
+    },
+    {
+      "label": "money, postage and labels",
+      "paths": [
+        "src/lib/labels*",
+        "src/lib/label-*",
+        "src/lib/shipping*",
+        "src/lib/easypost*",
+        "src/lib/ehub*",
+        "src/lib/*rate*",
+        "src/lib/buy-*",
+        "src/lib/customs*",
+        "src/lib/commercial-invoice*"
+      ],
+      "model": "gpt-6-astra",
+      "effort": "high"
+    },
+    {
+      "label": "inventory and the queue",
+      "paths": [
+        "src/lib/*stock*",
+        "src/lib/*inventory*",
+        "src/lib/*on-hand*",
+        "src/lib/*queue*",
+        "src/lib/committed*"
+      ],
+      "model": "gpt-6-astra",
+      "effort": "high"
+    },
+    {
+      "label": "auth, roles and public routes",
+      "paths": [
+        "src/lib/roles.server.ts",
+        "src/lib/permissions.ts",
+        "src/lib/auth-*",
+        "src/lib/cron-auth.server.ts",
+        "src/routes/api/public/**",
+        "src/components/auth-gate.tsx"
+      ],
+      "model": "gpt-6-astra",
+      "effort": "high"
+    },
+    {
+      "label": "cross-system contracts",
+      "paths": [
+        "src/lib/*.functions.ts",
+        "src/lib/*-push.server.ts",
+        "src/integrations/**"
+      ]
+    },
+    {
+      "label": "tests, fixtures and invariants",
+      "paths": [
+        "scripts/*-fixtures.ts",
+        "scripts/go-live-check.ts",
+        "scripts/run-fixture-suites.ts",
+        "e2e/**",
+        "playwright.config.ts"
+      ]
+    }
   ],
-  "skip": { "labels": ["review:waived"], "authors": ["dependabot[bot]"] },
-  "tiers": {
-    "light": { "effort": "low" },
-    "standard": { "effort": "medium" },
-    "adversarial": { "effort": "high" }
+  "skip": {
+    "labels": [
+      "review:waived"
+    ],
+    "authors": [
+      "dependabot[bot]"
+    ]
   },
-  "approval": { "enabled": true, "tiers": ["light", "standard", "adversarial"], "requireGreenChecks": false, "requestChangesOnBlocker": false },
-  "post": { "recordComment": false }
+  "tiers": {
+    "light": {
+      "model": "gpt-6-luna",
+      "effort": "medium"
+    },
+    "standard": {
+      "model": "gpt-6.1-sol",
+      "effort": "medium"
+    },
+    "adversarial": {
+      "model": "gpt-6.1-sol",
+      "effort": "high"
+    }
+  },
+  "approval": {
+    "enabled": true,
+    "tiers": [
+      "light",
+      "standard",
+      "adversarial"
+    ],
+    "requireGreenChecks": false,
+    "requestChangesOnBlocker": false
+  },
+  "post": {
+    "recordComment": false
+  }
 }

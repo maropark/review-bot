@@ -18,7 +18,7 @@ Three things go into the repository that wants reviews.
 **1. The workflow** — copy [`examples/review-bot.yml`](examples/review-bot.yml) to `.github/workflows/review-bot.yml` and pin the tag:
 
 ```yaml
-      - uses: maropark/review-bot@v0.1.1
+      - uses: maropark/review-bot@v0.2.0
 ```
 
 It runs on `pull_request` `ready_for_review` and `synchronize` (drafts, Dependabot and fork PRs are skipped), and can be run by hand from the Actions tab (`workflow_dispatch` with a PR number). The workflow's own token is enough to post a review; see [Approval](#approval-what-counts-on-github) for what it takes to approve.
@@ -31,7 +31,7 @@ It runs on `pull_request` `ready_for_review` and `synchronize` (drafts, Dependab
 | `protocol.kind` | `adversary-v1` renders the record block packmaster.work's `review-record.ts` parses; `generic` is a plain findings list |
 | `risk[]` | path globs that **force** a tier (default `adversarial`) and, unless `approve: true`, forbid approval |
 | `skip.labels` / `skip.authors` | a label that waives the review; authors (Dependabot) skipped unless the title reads as a major version bump |
-| `tiers.<tier>.effort` / `.model` | reasoning effort per tier, and an optional model override per tier |
+| `tiers.<tier>.effort` / `.model` | reasoning effort per tier (`low`, `medium`, `high`, `xhigh`, `max`), and an optional model per tier; `risk[].model` / `risk[].effort` do the same for the paths a rule names |
 | `size.light` / `size.standard` | the line thresholds used when no triage model is configured, or it fails |
 | `approval.*` | whether the bot may approve, for which tiers, whether a pending check blocks, whether a blocker requests changes |
 
@@ -45,6 +45,19 @@ gh secret   set REVIEW_API_KEY  -R OWNER/REPO        # prompts for the key; noth
 ```
 
 For the triage there are two kinds of model. An OpenAI-compatible one: `TRIAGE_*` default to the `REVIEW_*` values, so one endpoint and one key cover both. Or **TypeSafe's Jev** (see below): `TRIAGE_PROVIDER=typesafe`, `TRIAGE_MODEL=jev-latest` and a `TRIAGE_API_KEY` secret. With no triage model at all, the triage runs on rules and size only — a fine way to start.
+
+### Which model, at what effort
+
+Every tier can name its own model and effort, and so can every risk rule, so the spend follows the risk. The mapping the two SKO repositories use (Maro's choice, 2026-10-26; the model IDs are OpenAI's, verified against their docs):
+
+| what the triage decided | model | effort |
+|---|---|---|
+| `light` — low-risk, narrow | `gpt-6-luna` | medium |
+| `standard` — an ordinary change | `gpt-6.1-sol` | medium |
+| `adversarial` — complex or cross-cutting | `gpt-6.1-sol` | high |
+| a risk rule for auth, payments, data migrations, inventory | `gpt-6-astra` | high (`xhigh` for the hardest) |
+
+`REVIEW_MODEL` (the repository variable) is the default when a tier names none. When several risk rules match one PR, the rule asking for the most effort decides both model and effort. Effort is sent as its own field (`reasoning_effort` on Chat Completions, `reasoning.effort` on Responses), never appended to the model name.
 
 ## Providers
 
@@ -113,7 +126,7 @@ The reply must be one JSON object. A reply that does not validate (a clean verdi
 
 GitHub lets a *private* repository's action be used only by repositories of the **same owner**. So for an owner that is not the consuming organization (this bot under `maropark/`, used by `xpepTechnology/*`), there are two ways:
 
-- **Public repository** (recommended): `uses: maropark/review-bot@v0.1.1` works everywhere, no token. The bot holds no secrets, so there is nothing to hide; pinning to a tag means the consuming repo decides when to move.
+- **Public repository** (recommended): `uses: maropark/review-bot@v0.2.0` works everywhere, no token. The bot holds no secrets, so there is nothing to hide; pinning to a tag means the consuming repo decides when to move.
 - **Private repository plus a read token**: a fine-grained personal access token with read access to that one repository, stored in each consuming repo as a secret, and a checkout step before the action:
 
   ```yaml

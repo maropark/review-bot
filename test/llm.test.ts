@@ -50,6 +50,11 @@ describe("OpenAICompatible", () => {
     await new OpenAICompatible(cfg(), f, noSleep).complete({ system: "s", user: "u", effort: "none" });
     expect("reasoning_effort" in calls[0]!.body).toBe(false);
   });
+  test("xhigh is sent through untouched (the API documents low, medium, high, xhigh, max)", async () => {
+    const { f, calls } = fakeFetch([chatOk("x")]);
+    await new OpenAICompatible(cfg(), f, noSleep).complete({ system: "s", user: "u", effort: "xhigh" });
+    expect(calls[0]!.body.reasoning_effort).toBe("xhigh");
+  });
   test("responses API shape", async () => {
     const { f, calls } = fakeFetch([{ status: 200, body: { output_text: "hello", usage: { input_tokens: 3, output_tokens: 1 } } }]);
     const r = await new OpenAICompatible(cfg({ api: "responses" }), f, noSleep).complete({ system: "s", user: "u", effort: "low", json: true });

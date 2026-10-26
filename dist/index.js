@@ -7,6 +7,10 @@ var REVIEW_TIERS = ["light", "standard", "adversarial"];
 function strongerTier(a, b) {
   return TIER_ORDER.indexOf(a) >= TIER_ORDER.indexOf(b) ? a : b;
 }
+var EFFORTS = ["none", "low", "medium", "high", "xhigh", "max"];
+function effortRank(e) {
+  return EFFORTS.indexOf(e);
+}
 var SEVERITIES = ["blocker", "major", "minor"];
 var FINDING_STATUSES = ["open", "fixed", "rebutted", "deferred"];
 var silentLogger = { info() {}, warn() {}, error() {}, debug() {} };
@@ -159,7 +163,6 @@ function int(v, where, fallback) {
     throw new ConfigError(`${where} must be a non-negative integer`);
   return v;
 }
-var EFFORTS = ["none", "low", "medium", "high"];
 var TIERS = ["skip", "light", "standard", "adversarial"];
 function effort(v, where, fallback) {
   if (v === undefined)
@@ -200,7 +203,17 @@ function parseRepoConfig(raw) {
       const tier = r.tier ?? "adversarial";
       if (!REVIEW_TIERS.includes(tier))
         throw new ConfigError(`risk[${i}].tier must be one of ${REVIEW_TIERS.join(", ")}`);
-      risk.push({ label: r.label, paths, tier, approve: bool(r.approve, `risk[${i}].approve`, false) });
+      if (r.model !== undefined && (typeof r.model !== "string" || !r.model.trim()))
+        throw new ConfigError(`risk[${i}].model must be a non-empty string`);
+      const ruleEffort = r.effort === undefined ? undefined : effort(r.effort, `risk[${i}].effort`, "high");
+      risk.push({
+        label: r.label,
+        paths,
+        tier,
+        approve: bool(r.approve, `risk[${i}].approve`, false),
+        ...typeof r.model === "string" ? { model: r.model.trim() } : {},
+        ...ruleEffort ? { effort: ruleEffort } : {}
+      });
     });
   }
   let skip = { labels: [...d.skip.labels], authors: [...d.skip.authors] };
@@ -1171,7 +1184,7 @@ function forcedRules(files, config) {
   for (const rule of config.risk) {
     const hits = files.filter((f) => matchAny(rule.paths, f.filename) || (f.previous_filename ? matchAny(rule.paths, f.previous_filename) : false)).map((f) => f.filename);
     if (hits.length)
-      out.push({ rule: rule.label, tier: rule.tier, approve: rule.approve, paths: hits });
+      out.push({ rule: rule.label, tier: rule.tier, approve: rule.approve, paths: hits, ...rule.model ? { model: rule.model } : {}, ...rule.effort ? { effort: rule.effort } : {} });
   }
   return out;
 }
@@ -1274,8 +1287,19 @@ async function triage(signals, config, defaultModel, classify) {
   if (owner)
     reasons.push(`author ${signals.author} is the configured owner (a signal, not a permission)`);
   const settings = tier === "skip" ? null : config.tiers[tier];
-  const effort2 = settings ? settings.effort : "none";
-  const model = settings ? settings.model ?? defaultModel : "";
+  let effort2 = settings ? settings.effort : "none";
+  let model = settings ? settings.model ?? defaultModel : "";
+  if (tier !== "skip") {
+    const naming = forced.filter((f) => f.model || f.effort);
+    if (naming.length) {
+      const pick = naming.reduce((best, f) => effortRank(f.effort ?? effort2) > effortRank(best.effort ?? effort2) ? f : best);
+      if (pick.model)
+        model = pick.model;
+      if (pick.effort)
+        effort2 = pick.effort;
+      reasons.push(`risk rule "${pick.rule}" sets the model${pick.model ? ` ${pick.model}` : ""}${pick.effort ? ` at effort ${pick.effort}` : ""}`);
+    }
+  }
   return {
     tier,
     model,
@@ -1776,7 +1800,7 @@ function defaultConfigPath() {
 }
 
 // src/version.ts
-var VERSION = "v0.1.1";
+var VERSION = "v0.2.0";
 
 // src/action.ts
 function input(name) {

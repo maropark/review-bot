@@ -1,6 +1,6 @@
 {
   "name": "review-bot",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": true,
   "description": "Model-agnostic pull-request review bot: a cheap system-1 triage picks the tier, a strong model reviews against the repo's own protocol, the findings land on the PR as a review, and an approval follows only when the gate allows it.",
   "type": "module",

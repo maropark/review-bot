@@ -8,7 +8,11 @@ export function strongerTier(a: Tier, b: Tier): Tier {
   return TIER_ORDER.indexOf(a) >= TIER_ORDER.indexOf(b) ? a : b;
 }
 
-export type Effort = "none" | "low" | "medium" | "high";
+export type Effort = "none" | "low" | "medium" | "high" | "xhigh" | "max";
+export const EFFORTS: readonly Effort[] = ["none", "low", "medium", "high", "xhigh", "max"];
+export function effortRank(e: Effort): number {
+  return EFFORTS.indexOf(e);
+}
 export type Severity = "blocker" | "major" | "minor";
 export type FindingStatus = "open" | "fixed" | "rebutted" | "deferred";
 
@@ -79,6 +83,9 @@ export interface ForcedRule {
   tier: Tier;
   approve: boolean;
   paths: string[];
+  /** A rule may name the model and effort its paths deserve, over the tier's. */
+  model?: string;
+  effort?: Effort;
 }
 
 export interface Decision {

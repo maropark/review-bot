@@ -23,7 +23,14 @@ describe("repo config", () => {
     expect(c.tiers.adversarial.model).toBe("big");
     expect(c.tiers.light.effort).toBe("low");
   });
+  test("xhigh and max are efforts; a risk rule may carry a model and an effort", () => {
+    const c = parseRepoConfig({ tiers: { adversarial: { effort: "xhigh" } }, risk: [{ label: "pay", paths: ["lib/pay/**"], model: "astra", effort: "max" }] });
+    expect(c.tiers.adversarial.effort).toBe("xhigh");
+    expect(c.risk[0]).toEqual({ label: "pay", paths: ["lib/pay/**"], tier: "adversarial", approve: false, model: "astra", effort: "max" });
+  });
   const bad: [string, unknown][] = [
+    ["risk model empty", { risk: [{ label: "x", paths: ["y"], model: " " }] }],
+    ["risk effort bogus", { risk: [{ label: "x", paths: ["y"], effort: "ultra" }] }],
     ["unknown key", { nope: 1 }],
     ["bad protocol kind", { protocol: { kind: "fancy" } }],
     ["risk without label", { risk: [{ paths: ["x"] }] }],
